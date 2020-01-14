@@ -9,7 +9,7 @@ public:
    TCPServer();
    ~TCPServer();
 
-   void bindSvr(const char *ip_addr, unsigned short port);
+   int bindSvr(const char *ip_addr, unsigned short port);
    void listenSvr();
    void shutdown();
 
