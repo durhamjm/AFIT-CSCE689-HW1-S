@@ -22,7 +22,7 @@ class Server {
       virtual ~Server();
 
       // Overload me!
-      virtual int bindSvr(const char *ip_addr, unsigned short port) = 0;
+      virtual void bindSvr(const char *ip_addr, unsigned short port) = 0;
       virtual void listenSvr() = 0;
 
       // if you overload, don't forget to call me
