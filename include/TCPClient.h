@@ -3,6 +3,8 @@
 
 #include <string>
 #include "Client.h"
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 // The amount to read in before we send a packet
 const unsigned int stdin_bufsize = 50;
@@ -21,6 +23,9 @@ public:
 
 private:
 
+   int clientSocket, noblock, valread, socketdesc, i;
+   char buffer[1024], buffer2[1024];
+   sockaddr_in clientaddr;
 };
 
 
