@@ -28,6 +28,7 @@ TCPServer::~TCPServer() {
  *    Throws: socket_error for recoverable errors, runtime_error for unrecoverable types
  **********************************************************************************************/
 
+//Adapted from youtube.com/watch?v=cNdlrbZSkyQ
 void TCPServer::bindSvr(const char *ip_addr, short unsigned int port) {
     svrSocketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (svrSocketFD <= -1) {
@@ -58,6 +59,7 @@ void TCPServer::bindSvr(const char *ip_addr, short unsigned int port) {
  *    Throws: socket_error for recoverable errors, runtime_error for unrecoverable types
  **********************************************************************************************/
 
+//Portions adapted from www.geeksforgeeks.org/socket-programming-in-cc-handling-multiple-clients-on-server-without-multi-threading/
 void TCPServer::listenSvr() {
    if (listen(svrSocketFD, SOMAXCONN) == -1) {
         std::cerr << "Can't listen\n";
@@ -71,8 +73,8 @@ void TCPServer::listenSvr() {
     memset(host, 0, NI_MAXHOST);
     memset(svc, 0, NI_MAXSERV);
 
-
-    struct timeval tv = {1, 0}; // timeout of 1 second
+    struct timeval tv;
+    tv.tv_sec = 1;
 
     //Initialize client sockets to avoid fake connections
     for (currConns = 0; currConns <= maxConns; currConns++) {
@@ -122,21 +124,37 @@ void TCPServer::listenSvr() {
                 }
             }
 
+            //Add clients to array, check for input
             int i;
             for (i = 0; i < maxConns; i++) {
                 socketdesc = clientSocket[i];
 
                 if (FD_ISSET(socketdesc, &read_fd)) {
                     if ((valread = read(socketdesc, buffer, 1024)) == 0) {
+                        //closing, needs moved
                         getpeername(socketdesc, (struct sockaddr*)&svraddr, (socklen_t*)&svraddr);
                         printf("Client at %s:%d disconnected.\n",inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port));
 
-                        //closing, needs moved
                         close(socketdesc);
                         clientSocket[i] = 0;
-                    } else {
-                        buffer[valread] = '\0';
-                        send(socketdesc, buffer, strlen(buffer),0);
+                    } 
+                    //handling input, just echoes right now
+                    else {
+                        buffer[strcspn(buffer, "\n")] = '\0';
+                        buffer[strcspn(buffer, "\r")] = '\0';
+                        printf("Client at %s:%d sent: %s\n",inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port),buffer);
+                        if (!strcmp(buffer, "hello")) {
+                            send(socketdesc, message, strlen(message), 0);
+                        } else {
+                            response = "invalid command\n";
+                            send(socketdesc, response, strlen(response), 0);
+                            // buffer[valread] = '\n';
+                            // buffer[valread+1] ='\0'; 
+                            // send(socketdesc, buffer, strlen(buffer),0);
+
+                        }
+
+
                     }
                 }
             }
