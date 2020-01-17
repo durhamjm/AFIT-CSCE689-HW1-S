@@ -12,6 +12,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
+#include <iostream>
+#include <ostream>
+#include <unistd.h>
 
 TCPServer::TCPServer() {
 
@@ -31,21 +34,25 @@ TCPServer::~TCPServer() {
 
 //Adapted from youtube.com/watch?v=cNdlrbZSkyQ
 void TCPServer::bindSvr(const char *ip_addr, short unsigned int port) {
+    //Create the socket
     svrSocketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (svrSocketFD <= -1) {
-        std::cerr << "Error creating socket\n";
-        return;
+        std::cerr << "Error creating socket, shutting down\n";
+        TCPServer::shutdown();
     }
 
+    //Set socket to non-blocking
     noblock = fcntl(svrSocketFD, F_SETFL, fcntl(svrSocketFD, F_GETFL, 0) | O_NONBLOCK);
    
+   //Define IP attributes and get it + port from input
     svraddr.sin_family = AF_INET;
     svraddr.sin_port = htons(port);
-    inet_pton(AF_INET, ip_addr, &svraddr.sin_addr); //127.0.0.1, may need to change to &ip_addr?
+    inet_pton(AF_INET, ip_addr, &svraddr.sin_addr);
 
+    //Bind socket to IP/PORT
     if (bind(svrSocketFD, (sockaddr*)&svraddr, sizeof(svraddr)) == -1) {
-        std::cerr << "Can't bind to IP/port\n";
-        return;
+        std::cerr << "Can't bind to IP/port, shutting down\n";
+        TCPServer::shutdown();
     }
 
  
@@ -62,15 +69,17 @@ void TCPServer::bindSvr(const char *ip_addr, short unsigned int port) {
 
 //Portions adapted from www.geeksforgeeks.org/socket-programming-in-cc-handling-multiple-clients-on-server-without-multi-threading/
 void TCPServer::listenSvr() {
+   //Listen over the socket
    if (listen(svrSocketFD, SOMAXCONN) == -1) {
-        std::cerr << "Can't listen\n";
-        return;
+        std::cerr << "Can't listen, shutting down\n";
+        TCPServer::shutdown();
     }
 
+    //Prep client info & select data
     client.sin_addr = svraddr.sin_addr;
     client.sin_port = svraddr.sin_port;
+    svraddrlen = sizeof(svraddr);
     socklen_t clientSize = sizeof(client);
-
     struct timeval tv = {1, 0};
 
     //Initialize client sockets to avoid fake connections
@@ -78,49 +87,62 @@ void TCPServer::listenSvr() {
     for (i = 0; i <= maxConns; i++) {
         clientSocket[i] = 0;
     }
-    svraddrlen = sizeof(svraddr);
-        while(true) {
-            //Preps the socket for use with select
-            fd_set read_fd;
-            FD_ZERO(&read_fd);
-            FD_SET(svrSocketFD, &read_fd);
+    
+    //Loop looking got connections & data
+    while(true) {
+        //Preps the socket for use with select
+        fd_set read_fd;
+        FD_ZERO(&read_fd);
+        FD_SET(svrSocketFD, &read_fd);
 
-            for (i = 0; i <= maxConns; i++) {
-                socketdesc = clientSocket[i];
-                if (socketdesc > 0) FD_SET(socketdesc, &read_fd);
-                if (socketdesc > maxsocketdesc) { 
-                    maxsocketdesc = socketdesc;
+        //If server says shutdown, close
+        // bzero(svrcmd, sizeof(svrcmd));
+        // fgets(svrcmd, sizeof(svrcmd), stdin);
+        // if (!strcmp(svrcmd, "shutdown\n")) {
+        //     TCPServer::shutdown();
+        // }
+
+        //Look at each socket with data to see what it needs
+        for (i = 0; i <= maxConns; i++) {
+            socketdesc = clientSocket[i];
+            if (socketdesc > 0) {
+                FD_SET(socketdesc, &read_fd);
+            }
+            if (socketdesc > maxsocketdesc) { 
+                maxsocketdesc = socketdesc;
+            }
+        }
+
+        //Look for new connections
+        activity = select(maxsocketdesc+1, &read_fd, NULL, NULL, &tv) > 0;
+        if ((activity < 0) && (errno!=EINTR)) { 
+            std::cerr << "Error on select\n";
+        }
+
+        //If there's a new connection, accept it
+        if (FD_ISSET(svrSocketFD, &read_fd)) {
+            if ((newClient = accept(svrSocketFD, (struct sockaddr *)&svraddr, (socklen_t*)&svraddrlen)) < 0) {
+                std::cerr << "Error accepting client\n";
+            }
+            //Log connection
+            printf("Connection established with %s on port %d over socket %d.\n", inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port), newClient);
+            
+            //Send welcome message
+            if (send(newClient, message, strlen(message),0) != strlen(message)) {
+                perror("Error sending welcome message\n");
+            }
+            puts("Welcome message sent successfully\n");
+
+            //Add clients to array for tracking
+            for (i = 0; i < maxConns; i++) {
+                if (clientSocket[i] == 0) {
+                    clientSocket[i] = newClient;
+                    printf("Adding client to list of sockets as #%d.\n", newClient); //testing
+                    currConns++;
+                    break;
                 }
             }
-
-            activity = select(maxsocketdesc+1, &read_fd, NULL, NULL, &tv) > 0;
-            if ((activity < 0) && (errno!=EINTR)) { 
-                std::cerr << "Error on select"; 
-            }
-
-            if (FD_ISSET(svrSocketFD, &read_fd)) {
-                if ((newClient = accept(svrSocketFD, (struct sockaddr *)&svraddr, (socklen_t*)&svraddrlen)) < 0) {
-                    std::cerr << "Error accepting client";
-                    return;
-                }
-                //Try to get host name and port
-                printf("Connection established with %s on port %d over socket %d.\n", inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port), newClient);
-                
-                if (send(newClient, message, strlen(message),0) != strlen(message)) {
-                    perror("Error sending message");
-                }
-
-                puts("Welcome message sent successfully");
-
-                for (i = 0; i < maxConns; i++) {
-                    if (clientSocket[i] == 0) {
-                        clientSocket[i] = newClient;
-                        printf("Adding client to list of sockets as #%d.\n", newClient); //testing
-                        currConns++;
-                        break;
-                    }
-                }
-            }
+        }
 
             //Add clients to array, check for input
             for (i = 0; i < maxConns; i++) {
@@ -136,10 +158,12 @@ void TCPServer::listenSvr() {
                         close(socketdesc);
                         clientSocket[i] = 0;
                     } 
-                    //handling input
+                    //Handling input from client
+                    //First strip out the \n and \r so it doesn't mess with anything
                     else {
                         buffer[strcspn(buffer, "\n")] = '\0';
                         buffer[strcspn(buffer, "\r")] = '\0';
+                        //Log messages sent by clients
                         printf("Client at %s:%d sent: %s\n",inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port),buffer);
                         if (!strcmp(buffer, "hello")) {
                             send(socketdesc, message, strlen(message), 0);
@@ -168,38 +192,31 @@ void TCPServer::listenSvr() {
                             sprintf(ctemp1, "There can be up to %d simultaneous connections.\n", maxConns);
                             send(socketdesc, ctemp1, strlen(ctemp1), 0);
                         }
+                        //To be implemented later
                         else if (!strcmp(buffer, "passwd")) {
                             sprintf(ctemp1, "This feature is not yet implemented.\n");
                             send(socketdesc, ctemp1, strlen(ctemp1), 0);
                         }
+                        //For client to close connection
                         else if (!strcmp(buffer, "exit")) {
-                        //closing, needs moved
                         getpeername(socketdesc, (struct sockaddr*)&client, (socklen_t*)&client);
                         printf("Client at %s:%d disconnected.\n",inet_ntoa(svraddr.sin_addr), ntohs(svraddr.sin_port));
                         currConns--;
                         close(socketdesc);
                         clientSocket[i] = 0;
                         }
-                        
                         //Catch-all response
                         else {
                             response = "Invalid command. Type menu for help.\n";
                             send(socketdesc, response, strlen(response), 0);
-                            // buffer[valread] = '\n';
-                            // buffer[valread+1] ='\0'; 
-                            // send(socketdesc, buffer, strlen(buffer),0);
-
                         }
-
-
                     }
                 }
             }
+        }
 
-            }
-
-            return;
-        }  
+        return;
+    }  
     
 
 
@@ -211,5 +228,5 @@ void TCPServer::listenSvr() {
 
 void TCPServer::shutdown() {
     close(svrSocketFD);
-
+    exit(0);
 }

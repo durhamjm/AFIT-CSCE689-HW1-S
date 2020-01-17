@@ -35,23 +35,23 @@ TCPClient::~TCPClient() {
  **********************************************************************************************/
 
 void TCPClient::connectTo(const char *ip_addr, unsigned short port) {
-
+    //Create the socket and set it to non-blocking
     if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         printf("Error creating socket\n");
+        TCPClient::closeConn();
     }
     noblock = fcntl(clientSocket, F_SETFL | O_NONBLOCK);
     clientaddr.sin_family = AF_INET;
     clientaddr.sin_port = htons(port);
 
-
-
+    //Check IP, then connect
     if (inet_pton(AF_INET, ip_addr, &clientaddr.sin_addr) <= 0) {
         printf("Invalid IP");
     }
 
-     if (connect(clientSocket,(struct sockaddr *)&clientaddr, sizeof(clientaddr)) < 0) {
-         printf("Unable to connect");
-     }
+    if (connect(clientSocket,(struct sockaddr *)&clientaddr, sizeof(clientaddr)) < 0) {
+        printf("Unable to connect");
+    }
     
 }
 
@@ -62,9 +62,9 @@ void TCPClient::connectTo(const char *ip_addr, unsigned short port) {
  * 
  *    Throws: socket_error for recoverable errors, runtime_error for unrecoverable types
  **********************************************************************************************/
-
+//Adapted from www.bogotobogo.com/cplusplus/sockets_server_client.php
 void TCPClient::handleConnection() {
-   //while true, look for input and send, plus print output (if needed, server may do that automatically)
+    //Read and write to the socket
     int clientSize = sizeof(clientaddr);
     while (true) {
         fd_set read_fd;
@@ -84,16 +84,8 @@ void TCPClient::handleConnection() {
         fgets(buffer, sizeof(buffer)-1, stdin);
         n = write(clientSocket, buffer, strlen(buffer));
         bzero(buffer, sizeof(buffer));
-
-        
     }
-
-
-        
-
-    
-    //printf("%s\n",buffer);
-
+    return;
 }
 
 /**********************************************************************************************
@@ -104,6 +96,7 @@ void TCPClient::handleConnection() {
 
 void TCPClient::closeConn() {
     close(clientSocket);
+    exit(0);
 }
 
 
